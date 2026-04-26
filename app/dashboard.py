@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
-import random
+
+from utils import (get_bar_by_count, get_pie_plot, get_hitmap,
+                    get_multibar_plot, get_map, get_salary_plots,
+                    get_multibar_plot_by_spec, get_top_words)
 
 # Настройка страницы
 st.set_page_config(
@@ -45,421 +43,362 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ГЕНЕРАЦИЯ ТЕСТОВЫХ ДАННЫХ
-@st.cache_data
-def generate_vacancy_data(n_vacancies=500):
-    """Генерация реалистичных тестовых данных о вакансиях"""
-    
-    np.random.seed(42)
-    random.seed(42)
-    
-    # Профессии и их характеристики
-    professions = {
-        'Python Developer': {
-            'skills': ['Python', 'Django', 'PostgreSQL', 'REST API', 'Git'],
-            'salary_range': (120000, 250000),
-            'growth': 0.15  # 15% рост рынка
-        },
-        'Data Scientist': {
-            'skills': ['Python', 'SQL', 'Machine Learning', 'Pandas', 'TensorFlow'],
-            'salary_range': (150000, 300000),
-            'growth': 0.25
-        },
-        'Java Developer': {
-            'skills': ['Java', 'Spring Boot', 'Microservices', 'Kafka', 'Docker'],
-            'salary_range': (130000, 260000),
-            'growth': 0.10
-        },
-        'Frontend Developer': {
-            'skills': ['JavaScript', 'React', 'HTML/CSS', 'TypeScript', 'Next.js'],
-            'salary_range': (110000, 220000),
-            'growth': 0.12
-        },
-        'DevOps Engineer': {
-            'skills': ['Docker', 'Kubernetes', 'Jenkins', 'AWS', 'Terraform'],
-            'salary_range': (160000, 320000),
-            'growth': 0.20
-        },
-        'Product Manager': {
-            'skills': ['Product Management', 'Agile', 'Analytics', 'Jira', 'Leadership'],
-            'salary_range': (180000, 350000),
-            'growth': 0.18
-        },
-        'Sales Manager': {
-            'skills': ['B2B Sales', 'CRM', 'Negotiation', 'Cold Calling', 'Leadership'],
-            'salary_range': (90000, 200000),
-            'growth': 0.05
-        },
-        'Marketing Specialist': {
-            'skills': ['SMM', 'Content Marketing', 'SEO', 'Google Analytics', 'Email Marketing'],
-            'salary_range': (80000, 180000),
-            'growth': 0.08
-        },
-        'UI/UX Designer': {
-            'skills': ['Figma', 'Adobe XD', 'User Research', 'Prototyping', 'Sketch'],
-            'salary_range': (100000, 210000),
-            'growth': 0.14
-        },
-        'QA Engineer': {
-            'skills': ['Manual Testing', 'Automation', 'Selenium', 'Jira', 'SQL'],
-            'salary_range': (80000, 170000),
-            'growth': 0.07
-        }
-    }
-    
-    # Генерация данных
-    data = []
-    companies = ['Яндекс', 'Google', 'Microsoft', 'Amazon', 'Facebook', 'Тинькофф', 'Сбер', 'Ozon', 'Wildberries', 'VK']
-    cities = ['Москва', 'СПб', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород']
-    
-    start_date = datetime(2023, 1, 1)
-    
-    for i in range(n_vacancies):
-        profession = random.choice(list(professions.keys()))
-        prof_data = professions[profession]
-        
-        # Генерация зарплаты с трендом роста
-        base_salary = random.randint(*prof_data['salary_range'])
-        experience = random.choice([1, 2, 3, 5, 8])
-        salary = base_salary + experience * 5000
-        
-        # Генерация даты публикации (больше свежих вакансий)
-        days_ago = np.random.exponential(scale=30)
-        days_ago = min(days_ago, 180)
-        publish_date = start_date + timedelta(days=int(days_ago))
-        
-        # Описание вакансии
-        skills_str = ', '.join(random.sample(prof_data['skills'], k=random.randint(3, 5)))
-        description = f"""
-        {profession} в компанию {random.choice(companies)}.
-        Требуемый опыт: {experience} лет.
-        Необходимые навыки: {skills_str}.
-        Условия: ДМС, гибкий график, удаленная работа.
-        Обязанности: разработка и поддержка проектов, работа в команде.
-        """
-        
-        data.append({
-            'id': i,
-            'profession': profession,
-            'company': random.choice(companies),
-            'city': random.choice(cities),
-            'salary': salary,
-            'experience': experience,
-            'publish_date': publish_date,
-            'description': description.strip(),
-            'skills_count': len(prof_data['skills']),
-            'market_growth': prof_data['growth']
-        })
-    
-    df = pd.DataFrame(data)
-    
-    # Добавляем кластеры на основе профессий
-    profession_to_cluster = {prof: idx for idx, prof in enumerate(professions.keys())}
-    df['cluster'] = df['profession'].map(profession_to_cluster)
-    
-    # Добавляем тренд (количество вакансий по месяцам)
-    df['month'] = df['publish_date'].dt.to_period('M').astype(str)
-    
-    return df
-
 # Загрузка данных
-with st.spinner('Генерация данных...'):
-    df = generate_vacancy_data(500)
+with st.spinner('Загрузка данных...'):
+    df = pd.read_parquet('../research/dataset_for_dashboard.parquet')
 
-# Заголовок
-st.markdown('<div class="header-text">📊 Аналитическая панель рынка вакансий</div>', unsafe_allow_html=True)
+tab1, tab2 = st.tabs(["Анализ по категориям", "Детальный анализ категорий и специализаций"])
 
-# SIDEBAR - Фильтры
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/job.png", width=80)
-    st.title("🔍 Фильтры")
-    
-    # Фильтр по профессии
-    professions = ['Все'] + sorted(df['profession'].unique().tolist())
-    selected_profession = st.selectbox("Выберите профессию", professions)
-    
-    # Фильтр по городу
-    cities = ['Все'] + sorted(df['city'].unique().tolist())
-    selected_city = st.selectbox("Выберите город", cities)
-    
-    # Фильтр по зарплате
-    salary_range = st.slider(
-        "Диапазон зарплаты (тыс. руб)",
-        min_value=int(df['salary'].min()/1000),
-        max_value=int(df['salary'].max()/1000),
-        value=(50, 250)
-    )
-    
-    # Фильтр по опыту
-    experience_filter = st.multiselect(
-        "Опыт работы (лет)",
-        options=sorted(df['experience'].unique()),
-        default=sorted(df['experience'].unique())
-    )
-    
-    # Применение фильтров
-    filtered_df = df.copy()
-    if selected_profession != 'Все':
-        filtered_df = filtered_df[filtered_df['profession'] == selected_profession]
-    if selected_city != 'Все':
-        filtered_df = filtered_df[filtered_df['city'] == selected_city]
-    filtered_df = filtered_df[
-        (filtered_df['salary'] >= salary_range[0]*1000) &
-        (filtered_df['salary'] <= salary_range[1]*1000) &
-        (filtered_df['experience'].isin(experience_filter))
-    ]
+with tab1:
+    # Заголовок
+    st.markdown('<div class="header-text">Аналитическая панель рынка IT вакансий</div>', unsafe_allow_html=True)
 
-# ОСНОВНОЙ КОНТЕНТ
+    # Верхние метрики
+    col1, col2, col3, col4 = st.columns(4)
 
-# Верхние метрики
-col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{df.id.nunique()}</div>
+            <div class="metric-label">Вакансий</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-with col1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{len(filtered_df)}</div>
-        <div class="metric-label">Всего вакансий</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with col2:
+        unique_spec = df.explode('spec_by_name')['spec_by_name'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_spec}</div>
+            <div class="metric-label">Специальностей</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-with col2:
-    avg_salary = filtered_df['salary'].mean() if len(filtered_df) > 0 else 0
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{int(avg_salary/1000)} тыс. ₽</div>
-        <div class="metric-label">Средняя зарплата</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with col3:
+        unique_companies = df['employer_name'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_companies}</div>
+            <div class="metric-label">Компаний</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-with col3:
-    unique_companies = filtered_df['company'].nunique()
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{unique_companies}</div>
-        <div class="metric-label">Компаний</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with col4:
+        unique_city = df['address_city'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_city}</div>
+            <div class="metric-label">Городов</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-with col4:
-    top_city = filtered_df['city'].mode()[0] if len(filtered_df) > 0 else 'Нет'
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{top_city}</div>
-        <div class="metric-label">Город-лидер</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# Проверка, есть ли данные после фильтрации
-if len(filtered_df) == 0:
-    st.warning("Нет данных, соответствующих выбранным фильтрам. Измените параметры фильтрации.")
-    st.stop()
-
-# РЯД 1: Два графика
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📈 Спрос на профессии")
-    profession_counts = filtered_df['profession'].value_counts().head(8)
-    fig1 = px.bar(
-        x=profession_counts.values,
-        y=profession_counts.index,
-        orientation='h',
-        color=profession_counts.values,
-        color_continuous_scale='Viridis',
-        title="Количество вакансий по профессиям"
-    )
-    fig1.update_layout(height=400, showlegend=False)
-    st.plotly_chart(fig1, use_container_width=True)
-
-with col2:
-    st.subheader("💰 Зарплаты по профессиям")
-    salary_by_prof = filtered_df.groupby('profession')['salary'].mean().sort_values(ascending=True).tail(8)
-    fig2 = px.bar(
-        x=salary_by_prof.values,
-        y=salary_by_prof.index,
-        orientation='h',
-        color=salary_by_prof.values,
-        color_continuous_scale='Hot',
-        title="Средняя зарплата (тыс. руб)",
-        labels={'x': 'Зарплата (руб)', 'y': 'Профессия'}
-    )
-    fig2.update_layout(height=400, showlegend=False)
-    # Исправленная строка - применяем к объекту layout
-    fig2.update_layout(xaxis_tickformat=',.0f')
-    st.plotly_chart(fig2, use_container_width=True)
-
-# РЯД 2: Тренды и распределение
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📅 Динамика рынка")
-    # Группировка по месяцам
-    monthly_trend = filtered_df.groupby('month').size().reset_index(name='count')
-    if len(monthly_trend) > 1:
-        fig3 = px.line(
-            monthly_trend,
-            x='month',
-            y='count',
-            markers=True,
-            title="Количество вакансий по месяцам",
-            color_discrete_sequence=['#FF6B6B']
-        )
-        fig3.update_layout(height=400)
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("Недостаточно данных для отображения тренда")
-
-with col2:
-    st.subheader("🗺️ География вакансий")
-    city_dist = filtered_df['city'].value_counts().head(6)
-    fig4 = px.pie(
-        values=city_dist.values,
-        names=city_dist.index,
-        title="Распределение по городам",
-        color_discrete_sequence=px.colors.qualitative.Set3,
-        hole=0.3
-    )
-    fig4.update_layout(height=400)
-    st.plotly_chart(fig4, use_container_width=True)
-
-# РЯД 3: Опыт и компании
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📊 Зависимость зарплаты от опыта")
-    salary_by_exp = filtered_df.groupby('experience')['salary'].agg(['mean', 'min', 'max']).reset_index()
-    fig5 = px.line(
-        salary_by_exp,
-        x='experience',
-        y='mean',
-        title="Зарплата в зависимости от опыта",
-        labels={'experience': 'Опыт (лет)', 'mean': 'Средняя зарплата (руб)'},
-        markers=True
-    )
-    # Добавляем доверительные интервалы
-    fig5.add_scatter(
-        x=salary_by_exp['experience'],
-        y=salary_by_exp['min'],
-        mode='lines',
-        name='Минимум',
-        line=dict(dash='dash', color='gray')
-    )
-    fig5.add_scatter(
-        x=salary_by_exp['experience'],
-        y=salary_by_exp['max'],
-        mode='lines',
-        name='Максимум',
-        line=dict(dash='dash', color='gray')
-    )
-    fig5.update_layout(height=400)
-    st.plotly_chart(fig5, use_container_width=True)
-
-with col2:
-    st.subheader("🏢 Топ работодателей")
-    company_counts = filtered_df['company'].value_counts().head(8)
-    fig6 = px.bar(
-        x=company_counts.values,
-        y=company_counts.index,
-        orientation='h',
-        title="Количество вакансий по компаниям",
-        color=company_counts.values,
-        color_continuous_scale='Blues'
-    )
-    fig6.update_layout(height=400, showlegend=False)
-    st.plotly_chart(fig6, use_container_width=True)
-
-# РЯД 4: Scatter plot и тепловая карта
-st.subheader("🔬 Детальный анализ")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    # Scatter plot зарплата vs опыт
-    fig7 = px.scatter(
-        filtered_df,
-        x='experience',
-        y='salary',
-        color='profession',
-        size='skills_count',
-        hover_data=['company', 'city'],
-        title="Зарплата vs Опыт (размер = количество навыков)",
-        labels={'experience': 'Опыт (лет)', 'salary': 'Зарплата (руб)'}
-    )
-    fig7.update_layout(height=500)
-    st.plotly_chart(fig7, use_container_width=True)
-
-with col2:
-    # Тепловая карта (pivot table)
-    heatmap_data = filtered_df.pivot_table(
-        values='salary',
-        index='profession',
-        columns='city',
-        aggfunc='mean'
-    ).fillna(0)
-    
-    if not heatmap_data.empty and heatmap_data.shape[0] > 1 and heatmap_data.shape[1] > 1:
-        fig8 = px.imshow(
-            heatmap_data,
-            text_auto='.0f',
-            aspect='auto',
-            title="Средняя зарплата по профессиям и городам (руб)",
-            labels={'x': 'Город', 'y': 'Профессия', 'color': 'Зарплата'},
-            color_continuous_scale='RdYlGn'
-        )
-        fig8.update_layout(height=500)
-        st.plotly_chart(fig8, use_container_width=True)
-    else:
-        st.info("Недостаточно данных для тепловой карты (нужно минимум 2 профессии и 2 города)")
-
-# РЯД 5: Детальная таблица
-st.subheader("📋 Список вакансий")
-with st.expander("Показать/скрыть таблицу"):
-    # Форматирование для отображения
-    display_df = filtered_df.copy()
-    display_df['salary'] = display_df['salary'].apply(lambda x: f"{int(x/1000)} тыс. ₽")
-    display_df['publish_date'] = display_df['publish_date'].dt.strftime('%Y-%m-%d')
-    display_df = display_df[['profession', 'company', 'city', 'salary', 'experience', 'publish_date', 'description']]
-    display_df.columns = ['Профессия', 'Компания', 'Город', 'Зарплата', 'Опыт', 'Дата', 'Описание']
-    
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        height=400,
-        column_config={
-            "Описание": st.column_config.TextColumn(width="large"),
-            "Зарплата": st.column_config.TextColumn(width="small"),
-        }
-    )
-
-# Дополнительная статистика в сайдбаре
-with st.sidebar:
     st.markdown("---")
-    st.markdown("### 📊 Статистика")
-    
-    if len(filtered_df) > 0:
-        # Самые востребованные навыки
-        all_skills = []
-        for desc in filtered_df['description'].head(100):
-            if 'Навыки:' in desc:
-                skills_part = desc.split('Навыки:')[1].split('.')[0] if 'Навыки:' in desc else ''
-                all_skills.extend([s.strip() for s in skills_part.split(',')])
+
+    # КОЛИЧЕСТВО ВАКАНСИЙ ПО КАТЕГОРИЯМ И ПРОФЕССИЯМ
+
+    # ПАЙПЛОТ ПО КАТЕГОРИЯМ
+
+    pie_plot, table = st.columns(2)
+    cat_counts = df.groupby('category_by_name')['id'].nunique()
+
+    with pie_plot:
         
-        if all_skills:
-            skill_counts = pd.Series(all_skills).value_counts().head(10)
-            st.markdown("**Топ-10 навыков:**")
-            for skill, count in skill_counts.items():
-                st.progress(count / skill_counts.max(), text=f"{skill}: {count}")
+        st.plotly_chart(
+            get_pie_plot(cat_counts, 'Распределение вакансий по категориям'),
+            use_container_width=True
+            )
+        
+    with table:
+        for_table_df = cat_counts.reset_index()
+        for_table_df.columns = ['Категория', 'Количество вакансий']
+        for_table_df = for_table_df.sort_values('Количество вакансий', ascending=False)
+        for_table_df.index = range(1, len(for_table_df) + 1)
+
+        st.subheader("")
+
+        st.dataframe(
+            for_table_df,
+            use_container_width=False
+        )
     
-    # Скачивание данных
-    csv = filtered_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Скачать данные (CSV)",
-        data=csv,
-        file_name="vacancies_analysis.csv",
-        mime="text/csv",
+    st.markdown("---")
+
+    # СПЕЦИАЛИЗАЦИИ ПО КОЛИЧЕСТВУ ВАКАНСИЙ
+    top_scep, tail_spec = st.columns(2)
+    profession_counts = df.groupby('spec_by_name')['id'].nunique().sort_values(ascending=False)
+
+    with top_scep:
+
+        data = profession_counts.head(15).sort_values()
+    
+        st.plotly_chart(
+            get_bar_by_count(data, 'Наиболее востребованные професии'),
+            use_container_width=True
+            )
+    
+    with tail_spec:
+
+        data = profession_counts.tail(15).sort_values()
+    
+        st.plotly_chart(
+            get_bar_by_count(data, 'Наименее востребованные професии'),
+            use_container_width=True
+            )
+        
+    st.markdown("---")   
+
+    # Частота пар разных категорий в рамках одной вакансии   
+    vacancy_categories = df.groupby('id')['category_by_name'].apply(set)
+
+    st.plotly_chart(
+        get_hitmap(vacancy_categories, 'Частота пар разных категорий в рамках одной вакансии'),
+        use_container_width=True
+        )
+    
+    st.markdown("---") 
+
+    st.plotly_chart(
+        get_multibar_plot(df,
+                           'Доля форматов работы по категориям',
+                           'schedule',
+                           'Формат работы'),
+        use_container_width=True
+        )
+    
+    st.plotly_chart(
+        get_multibar_plot(df,
+                           'Доля требуемого опыта работы по категориям',
+                           'experience',
+                           'Опыт'),
+        use_container_width=True
+        )
+    
+    st.markdown("---") 
+
+    grouped = df.groupby(['category_by_name', 'experience', 'salary_gross'])[['salary_from_rub', 'salary_to_rub']].mean()
+
+    grouped['mean_salary'] = round((grouped['salary_from_rub'] + grouped['salary_to_rub']) / 2, 1)
+
+    grouped = grouped.reset_index()
+
+    st.plotly_chart(
+        get_salary_plots(grouped),
+        use_container_width=True
+        )
+
+    st.markdown("---") 
+
+    st.plotly_chart(
+        get_map(df, 'Распределение вакансий по миру'),
+        use_container_width=True
+        )
+    
+
+with tab2:
+    # SIDEBAR - Фильтры
+    with st.sidebar:
+        st.image("https://img.icons8.com/color/96/000000/job.png", width=80)
+        st.title("🔍 Фильтры")
+
+        filtered_df = df.copy()
+        category_df = df.copy()
+
+        # Фильтр по категории 
+        category_counts = filtered_df.groupby('category_by_name')['id'].nunique()
+        categories = category_counts.sort_values(ascending=False).index.tolist()
+        selected_category = st.selectbox("Выберите категорию", categories)
+        
+        filtered_df = filtered_df[filtered_df['category_by_name'] == selected_category]
+        category_df = category_df[category_df['category_by_name'] == selected_category]
+
+        # Фильтр по профессии
+        profession_counts = filtered_df.groupby('spec_by_name')['id'].nunique()
+        professions = ['Все'] + profession_counts.sort_values(ascending=False).index.tolist()
+        selected_profession = st.selectbox("Выберите профессию", professions)
+        if selected_profession != 'Все':
+            filtered_df = filtered_df[filtered_df['spec_by_name'] == selected_profession]
+        
+        # Фильтр по городу
+        cities_counts = filtered_df.groupby('address_city')['id'].nunique()
+        cities = ['Все'] + cities_counts.sort_values(ascending=False).index.tolist()
+        selected_city = st.selectbox("Выберите город", cities)
+        if selected_city != 'Все':
+            filtered_df = filtered_df[filtered_df['address_city'] == selected_city]
+            category_df = category_df[category_df['address_city'] == selected_city]
+        
+        # Фильтр по опыту
+        experience_filter = st.multiselect(
+            "Опыт работы (лет)",
+            options=sorted(filtered_df['experience'].unique()),
+            default=sorted(filtered_df['experience'].unique())
+        )
+        filtered_df = filtered_df[filtered_df['experience'].isin(experience_filter)]
+        category_df = category_df[category_df['experience'].isin(experience_filter)]
+
+    # Проверка, есть ли данные после фильтрации
+    if len(filtered_df) == 0:
+        st.warning("Нет данных, соответствующих выбранным фильтрам. Измените параметры фильтрации.")
+        st.stop()
+
+
+
+
+    st.markdown(f'<div class="header-text">Аналитическая панель по категории {selected_category}</div>', unsafe_allow_html=True)
+
+    # Верхние метрики
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{category_df.id.nunique()}</div>
+            <div class="metric-label">Вакансий</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        unique_companies = category_df['employer_name'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_companies}</div>
+            <div class="metric-label">Компаний</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        unique_city = category_df['address_city'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_city}</div>
+            <div class="metric-label">Городов</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    pie_plot, table = st.columns(2)
+    
+    cat_counts = category_df.groupby('spec_by_name')['id'].nunique()
+
+    with pie_plot:
+        
+        st.plotly_chart(
+            get_pie_plot(cat_counts, 'Распределение специальностей в категории'),
+            use_container_width=True
+            )
+        
+    with table:
+        for_table_df = cat_counts.reset_index()
+        for_table_df.columns = ['Специализация', 'Количество вакансий']
+        for_table_df = for_table_df.sort_values('Количество вакансий', ascending=False)
+        for_table_df.index = range(1, len(for_table_df) + 1)
+
+        st.subheader("")
+
+        st.dataframe(
+            for_table_df,
+            use_container_width=False
+        )
+    
+    st.markdown("---")
+
+    st.plotly_chart(
+        get_multibar_plot_by_spec(category_df,
+                           'Доля требуемого опыта работы по специальностям',
+                           'experience',
+                           'Опыт'),
+        use_container_width=True
+        )
+    
+    st.markdown("---")
+
+    grouped = category_df.groupby(['spec_by_name', 'experience', 'salary_gross'])[['salary_from_rub', 'salary_to_rub']].mean()
+
+    grouped['mean_salary'] = round((grouped['salary_from_rub'] + grouped['salary_to_rub']) / 2, 1)
+
+    grouped = grouped.reset_index()
+
+    st.plotly_chart(
+        get_salary_plots(grouped, 'spec_by_name', 'Средняя зарплата по специальностям, опыту и типу выплат'),
+        use_container_width=True
+        )
+
+    st.markdown("---") 
+
+    top_by_category = category_df.groupby('category_by_name', as_index=False)['latin_words'].apply(
+        lambda x: get_top_words(x, 20)
     )
+    top_by_category = top_by_category.explode('latin_words')
+    top_by_category['Термин/Навык'] = top_by_category.latin_words.str[0]
+    top_by_category['Количество вакансий со словом в категории'] = top_by_category.latin_words.str[1]
+    top_by_category['Доля от общего количества вакансий в категории'] = top_by_category.latin_words.str[2]
+    top_by_category.drop(['latin_words', 'category_by_name'], axis=1, inplace=True)
+
+    st.subheader("Топ навыков по категории")
+
+    st.dataframe(
+            top_by_category,
+            use_container_width=False
+        )
+    
+    st.markdown("---")
+
+    st.plotly_chart(
+        get_map(category_df, 'Распределение вакансий по миру', 'spec_by_name', 'Специализация'),
+        use_container_width=True
+        )
+    
+    st.markdown("---")
+
+
+    st.markdown(f'<div class="header-text">Аналитическая панель по профессии {selected_profession}</div>', unsafe_allow_html=True)
+
+    # Верхние метрики
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{filtered_df.id.nunique()}</div>
+            <div class="metric-label">Вакансий</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        unique_companies = filtered_df['employer_name'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_companies}</div>
+            <div class="metric-label">Компаний</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        unique_city = filtered_df['address_city'].nunique()
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{unique_city}</div>
+            <div class="metric-label">Городов</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    top_by_spec= filtered_df.groupby('spec_by_name', as_index=False)['latin_words'].apply(
+        lambda x: get_top_words(x, 20)
+    )
+    top_by_spec = top_by_spec.explode('latin_words')
+    top_by_spec['Термин/Навык'] = top_by_spec.latin_words.str[0]
+    top_by_spec['Количество вакансий со словом в категории'] = top_by_spec.latin_words.str[1]
+    top_by_spec['Доля от общего количества вакансий в категории'] = top_by_spec.latin_words.str[2]
+    top_by_spec.drop(['latin_words', 'spec_by_name'], axis=1, inplace=True)
+
+    st.subheader("Топ навыков по специальности")
+
+    st.dataframe(
+            top_by_spec,
+            use_container_width=False
+        )
+
 
 # Footer
 st.markdown("---")
