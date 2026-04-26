@@ -332,6 +332,7 @@ with tab2:
     top_by_category['Количество вакансий со словом в категории'] = top_by_category.latin_words.str[1]
     top_by_category['Доля от общего количества вакансий в категории'] = top_by_category.latin_words.str[2]
     top_by_category.drop(['latin_words', 'category_by_name'], axis=1, inplace=True)
+    top_by_category.index = range(1, len(for_table_df) + 1)
 
     st.subheader("Топ навыков по категории")
 
@@ -388,9 +389,10 @@ with tab2:
     )
     top_by_spec = top_by_spec.explode('latin_words')
     top_by_spec['Термин/Навык'] = top_by_spec.latin_words.str[0]
-    top_by_spec['Количество вакансий со словом в категории'] = top_by_spec.latin_words.str[1]
-    top_by_spec['Доля от общего количества вакансий в категории'] = top_by_spec.latin_words.str[2]
+    top_by_spec['Количество вакансий со словом по специальности'] = top_by_spec.latin_words.str[1]
+    top_by_spec['Доля от общего количества вакансий по специальности'] = top_by_spec.latin_words.str[2]
     top_by_spec.drop(['latin_words', 'spec_by_name'], axis=1, inplace=True)
+    top_by_spec.index = range(1, len(for_table_df) + 1)
 
     st.subheader("Топ навыков по специальности")
 
